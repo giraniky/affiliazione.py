@@ -29,14 +29,13 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     # Default values
     selected_marketplace = "DE"
     selected_date = datetime.now().date()
-
     asin_lines = []
 
-    # Analisi righe iniziali
+    # Analizza le righe iniziali
     for line in lines:
         if line.upper() in ["DE", "FR", "IT", "ES", "UK", "US"]:
             selected_marketplace = line.upper()
-        elif len(line) == 10 and line.startswith("B0"):  # probabilmente un ASIN
+        elif len(line) == 10 and line.startswith("B0"):
             asin_lines.append(line)
         else:
             try:
@@ -68,10 +67,33 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if not filtered_orders:
             report += "❌ Nessun ordine trovato per questa data.\n"
         else:
+            # Analisi ASIN mancanti
+            asin_missing_info = []
             for asin, required_count in order_counts.items():
                 present = asin_counts.get(asin, 0)
                 if present < required_count:
-                    check_results.append(f"🔴 ASIN {asin}: richiesto {required_count}, inserito {present}")
+                    matching_orders = [o for o in filtered_orders if o["asin"] == asin]
+                    price_str = matching_orders[0].get("price", "0") if matching_orders else "0"
+                    try:
+                        price = float(price_str.replace(",", "."))
+                    except:
+                        price = 0
+                    asin_missing_info.append({
+                        "asin": asin,
+                        "required": required_count,
+                        "present": present,
+                        "price": price
+                    })
+
+            # Ordina per prezzo decrescente
+            asin_missing_info.sort(key=lambda x: x["price"], reverse=True)
+
+            # Costruzione messaggi
+            check_results = [
+                f"🔴 ASIN {x['asin']}: richiesto {x['required']}, inserito {x['present']}, prezzo: {x['price']}€"
+                for x in asin_missing_info
+            ]
+
             if not check_results:
                 report += "✅ Tutti gli ASIN negli ordini sono presenti almeno il numero di volte inserito.\n"
             else:
@@ -84,7 +106,6 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
 # === MAIN ===
 
 app = ApplicationBuilder().token(BOT_TOKEN).build()
-
 app.add_handler(CommandHandler("start", start))
 app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
 
