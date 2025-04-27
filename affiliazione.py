@@ -106,7 +106,8 @@ async def handle_document(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await file.download_to_drive(path)
 
     try:
-        df = pd.read_excel(path)
+        # Salta la seconda riga di stile (index 1)
+        df = pd.read_excel(path, skiprows=[1])
     except Exception as e:
         return await update.message.reply_text(f"Errore lettura Excel: {e}")
 
