@@ -9,6 +9,7 @@ from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, Con
 USERNAME = "Sheet"
 PASSWORD = "SyncSheet"
 URL = "https://mn37hxjeciuzjxk.pannello.ovh/api/get_orders/"
+PRODUCT_URL = "https://mn37hxjeciuzjxk.pannello.ovh/api/get_products/"
 BOT_TOKEN = "8179229896:AAGLTqMJYsXjqNP2aiEU9PGbhVp9IRhB3jE"
 
 # === FUNZIONI ===
@@ -49,7 +50,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     start_of_day = int(time.mktime(datetime(selected_date.year, selected_date.month, selected_date.day).timetuple()))
     end_of_day = int(time.mktime(datetime(selected_date.year, selected_date.month, selected_date.day, 23, 59, 59).timetuple()))
 
-    # Chiamata API
+    # Chiamata API ordini
     response = requests.post(URL, data={"username": USERNAME, "password": PASSWORD})
     orders_data = response.json()
 
@@ -72,17 +73,37 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             for asin, required_count in order_counts.items():
                 present = asin_counts.get(asin, 0)
                 if present < required_count:
-                    matching_orders = [o for o in filtered_orders if o["asin"] == asin]
-                    price_str = matching_orders[0].get("price", "0") if matching_orders else "0"
+                    # Recupera info prodotto
                     try:
-                        price = float(price_str.replace(",", "."))
-                    except:
+                        product_resp = requests.post(
+                            PRODUCT_URL,
+                            data={
+                                "username": USERNAME,
+                                "password": PASSWORD,
+                                "asin": asin,
+                                "marketplace": selected_marketplace
+                            }
+                        )
+                        product_data = product_resp.json()
+                        if product_data.get("success") and product_data.get("products"):
+                            product = product_data["products"][0]
+                            price_str = product.get("price", "0")
+                            name = product.get("name", "Nome non disponibile")
+                            price = float(price_str.replace(",", "."))
+                        else:
+                            name = "Nome non disponibile"
+                            price = 0
+                    except Exception as e:
+                        print(f"Errore nel recupero info per {asin}: {e}")
+                        name = "Errore nel recupero"
                         price = 0
+
                     asin_missing_info.append({
                         "asin": asin,
                         "required": required_count,
                         "present": present,
-                        "price": price
+                        "price": price,
+                        "name": name
                     })
 
             # Ordina per prezzo decrescente
@@ -90,7 +111,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
             # Costruzione messaggi
             check_results = [
-                f"🔴 ASIN {x['asin']}: richiesto {x['required']}, inserito {x['present']}, prezzo: {x['price']}€"
+                f"🔴 ASIN {x['asin']} ({x['name']}): richiesto {x['required']}, inserito {x['present']}, prezzo: {x['price']}€"
                 for x in asin_missing_info
             ]
 
@@ -99,7 +120,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             else:
                 report += "\n".join(check_results)
     else:
-        report += "⚠️ Errore nella chiamata all'API."
+        report += "⚠️ Errore nella chiamata all'API ordini."
 
     await update.message.reply_text(report)
 
